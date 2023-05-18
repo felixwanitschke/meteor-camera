@@ -5,12 +5,15 @@ def preprocessing(frame):
     # Apply the preprocessing steps to a single frame
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    #background subtraction method 
     fgmask = backSub.apply(blur)
+    #apply morphological operations
     eroded_mask = cv2.erode(fgmask, kernel, iterations=2)
     dilated_mask = cv2.dilate(eroded_mask, kernel, iterations=1)
     return dilated_mask
 
 def add(new_, frame_, i):
+    #add 20 frames and return the combined image
     if(i<=20):
         new_ += frame_
         i += 1
@@ -28,12 +31,10 @@ def meteor_detection(new_, processed_frame, counter):
 
     # Check if any lines are detected
     if lines is not None:
-        print("Lines detected!")
+        print("Lines detected!")  #when there are lines on the frame
         # Process the detected lines further if needed
         for line in lines:
             x1, y1, x2, y2 = line[0]
-            length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-            print(x1,y1,x2,y2, counter)
             cv2.line(processed_frame, (x1, y1), (x2, y2), (255, 255, 255), 1)  # Example: draw the lines on the image
     else:
         print("No lines detected.")
@@ -61,8 +62,9 @@ while True:
 
     # Preprocess the frame
     processed_frame = preprocessing(frame)
-    
+    #add frames
     new_, i = add(new_, processed_frame, i)
+    #after each 20 frames, check on the combined frames, if there is any line, 
     if(i == 20):
         meteor_detection(new_, processed_frame, count)
         output = 0
