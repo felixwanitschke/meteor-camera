@@ -49,17 +49,14 @@ class Camera:
                     print("Motion detected!")
                     loop_start = time.time()
                     detectionTime = dt.datetime.now().isoformat()
-                    self.camera.split_recording(
-                        f"/home/kefe/{dailySchedule.date}/Detection_{detectionTime}.h264"
-                    )
                     self.camera.wait_recording(10)
                     self.camera.split_recording(stream)
                     loop_stop = time.time()
 
-                    # stream.copy_to(
-                    #     f"/home/kefe/{dailySchedule.date}/Detection_{detectionTime}.h264",
-                    #     seconds=15,
-                    # )
+                    stream.copy_to(
+                        f"/home/kefe/{dailySchedule.date}/Detection_{detectionTime}.h264",
+                        seconds=15,
+                    )
 
                     loopTime = loop_stop - loop_start
                     print(loopTime)
@@ -115,20 +112,18 @@ class DailyMeasurement:
 
 class TestMeasurement:
     def __init__(self) -> None:
-        camera = Camera(framerate=30)
+        date_iso = dt.date.today().isoformat()
+        filename = f"/home/kefe/{date_iso}"
+        camera = Camera(framerate=10, outputPath=filename)
         print("Camera created")
         dailySchedule = DailySchedule()
         print("Schedule created")
-        date = dt.date.today()
-        date_iso = dt.date.today().isoformat()
+
         try:
-            os.makedirs(f"/home/kefe/{date_iso}")
+            os.makedirs(filename)
         except FileExistsError:
-            os.makedirs(f"/home/kefe/{date_iso}(1)")
             pass
 
-        finally:
-            pass
         start, stop = dailySchedule.getTestWindow(delta=1)
 
         while True:

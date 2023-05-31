@@ -42,7 +42,7 @@ class DailySchedule:
     def getTestWindow(self, delta):
         now = dt.datetime.now()
         now = now.replace(tzinfo=self.timezone)
-        start = now + dt.timedelta(seconds=15)
+        start = now + dt.timedelta(seconds=5)
         stop = now + dt.timedelta(minutes=delta)
         return start, stop
 
