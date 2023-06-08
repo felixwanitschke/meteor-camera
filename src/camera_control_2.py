@@ -11,6 +11,8 @@ import time
 import numpy as np
 from pprint import *
 import random
+import cv2 as cv
+import collections
 
 # main={"size": (2028, 1520)}
 
@@ -22,8 +24,12 @@ class Camera:
         self.lsize = (1280, 720)
         self.camera = Picamera2()
         video_config = self.camera.create_video_configuration(
-            controls={"FrameRate": self.framerate},
-            main={"size": (1280, 720), "format": "RGB888"},
+            controls={
+                "FrameRate": self.framerate,
+                "AnalogueGain": 200.0,
+                "ExposureTime": 180000,
+            },
+            main={"size": (1280, 720), "format": "YUV420"},
             lores={"size": self.lsize, "format": "YUV420"},
         )
         self.camera.configure(video_config)
@@ -56,21 +62,94 @@ class Camera:
         self.camera.start_encoder()
         w, h = self.lsize
         prev = None
+        first = True
+        encoding = False
+        ltime = 0
+        averagingNumber = 9
+        buffer = collections.deque([])
+        print("Recording started!")
+        try:
+            while dailySchedule.isSupposedToMeasure(start, stop, dt.datetime.now()):
+                meteors = None
+
+                start_processing = time.perf_counter()
+                cur = self.camera.capture_buffer("main")
+                cur = cur[: w * h].reshape(h, w)
+                time.sleep(1.5)
+                if first:
+                    cv.imwrite(f"{time.time()}first.jpg", cur)
+                    # first = False
+                buffer.appendleft(cur // averagingNumber)
+                if len(buffer) < averagingNumber:
+                    continue
+                buffer.pop()
+                average = cur  # sum(buffer)
+                # print(average)
+                # print(sum(buffer))
+                # print(cur)
+                average1 = cv.GaussianBlur(average, (5, 5), 0)
+                average2 = cv.Canny(average1, 75, 125)
+                meteors = cv.HoughLinesP(
+                    average2, 1, np.pi / 180, 25, minLineLength=50, maxLineGap=3
+                )
+                # Measure pixels differences between current and
+                # previous frame
+                # mse = np.square(np.subtract(cur, prev)).mean()
+                stop_processing = time.perf_counter()
+                # print("Processing time", stop_processing - start_processing)
+                if meteors is not None:
+                    print("Meteor detected")
+                    if not encoding:
+                        detectionTime = dt.datetime.now().isoformat()
+                        self.encoder.output.fileoutput = (
+                            f"{self.outputPath}/Detection_{detectionTime}.h264"
+                        )
+                        self.encoder.output.start()
+                        encoding = True
+                        cv.imwrite(f"{detectionTime}.jpg", cur)
+                        cv.imwrite(f"{detectionTime}average.jpg", average)
+                        cv.imwrite(f"{detectionTime}blur.jpg", average1)
+                        cv.imwrite(f"{detectionTime}canny.jpg", average2)
+                        if time.time() - ltime > 7.0:
+                            pass  # dann aufnahme abbrechen, da Sattelit
+                    ltime = time.time()
+                else:
+                    if encoding and time.time() - ltime > 7.0:
+                        self.encoder.output.stop()
+                        encoding = False
+                        print("Video End")
+
+        finally:
+            print("Measurement stopped")
+            self.camera.stop()
+
+    def bufferRecordingTest2(self, start, stop, dailySchedule: DailySchedule):
+        self.camera.start_encoder()
+        w, h = self.lsize
+        prev = None
         encoding = False
         ltime = 0
         print("Recording started!")
         try:
             while dailySchedule.isSupposedToMeasure(start, stop, dt.datetime.now()):
-                time.sleep(0.5)
+                time.sleep(0.05)
+                meteors = None
+                start_processing = time.perf_counter()
                 cur = self.camera.capture_buffer("lores")
-                print(cur.shape)
                 cur = cur[: w * h].reshape(h, w)
-                print(cur.shape)
+                cur = cv.GaussianBlur(cur, (5, 5), 0)
+                cur = cv.Canny(cur, 50, 100)
+                meteors = cv.HoughLinesP(
+                    cur, 1, np.pi / 180, 25, minLineLength=50, maxLineGap=5
+                )
+                print(meteors)
                 if prev is not None:
                     # Measure pixels differences between current and
                     # previous frame
-                    mse = np.square(np.subtract(cur, prev)).mean()
-                    if mse > 7:
+                    # mse = np.square(np.subtract(cur, prev)).mean()
+                    stop_processing = time.perf_counter()
+                    print("Processing time", stop_processing - start_processing)
+                    if meteors is not None:
                         if not encoding:
                             detectionTime = dt.datetime.now().isoformat()
                             self.encoder.output.fileoutput = (
@@ -78,7 +157,7 @@ class Camera:
                             )
                             self.encoder.output.start()
                             encoding = True
-                            print("New Motion", mse)
+                            cv.imwrite(f"{detectionTime}.jpg", cur)
                             if time.time() - ltime > 7.0:
                                 pass  # dann aufnahme abbrechen, da Sattelit
                         ltime = time.time()
@@ -94,6 +173,8 @@ class Camera:
             self.camera.stop()
 
     def standard_recording(self, recordingTime):
+        self.camera.start_encoder()
+        w, h = self.lsize
         detectionTime = dt.datetime.now().isoformat()
         self.camera.start_recording(self.encoder, self.output, Quality.HIGH)
         self.output.fileoutput = f"{self.outputPath}/Detection_{detectionTime}.h264"
@@ -102,24 +183,8 @@ class Camera:
         self.output.stop()
         self.camera.stop_recording()
 
-    def isMeteorDetected(self):
-        return True
-
-    def detect_motion(self):
-        stream = io.BytesIO()
-        self.camera.capture(stream, format="jpeg", use_video_port=True)
-        stream.seek(0)
-        if self.prior_image is None:
-            self.prior_image = Image.open(stream)
-            return False
-        else:
-            current_image = Image.open(stream)
-            # Compare current_image to prior_image to detect motion. This is
-            # left as an exercise for the reader!
-            result = random.randint(0, 10) == 0
-            # Once motion detection is done, make the prior image the current
-            self.prior_image = current_image
-            return result
+    def capture_image(self):
+        self.camera.start_encoder()
 
 
 class DailyMeasurement:
@@ -154,7 +219,7 @@ class TestMeasurement:
     def __init__(self, delta) -> None:
         date_iso = dt.date.today().isoformat()
         filename = f"/home/kefe/{date_iso}"
-        camera = Camera(framerate=30, outputPath=filename)
+        camera = Camera(framerate=5, outputPath=filename)
         print("Camera created")
         dailySchedule = DailySchedule()
         print("Schedule created")
