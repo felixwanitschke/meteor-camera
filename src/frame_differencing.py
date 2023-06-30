@@ -1,67 +1,83 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy import ndimage
-def preprocessing(final, frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
-#     blur = ndimage.median_filter(blur, size=2)
-    final += blur
-    
-    return final
+import matplotlib.patches as patches
+import glob
+import os
+%matplotlib qt
 
-def frame_diff(current, prev):
-    frame_diff = cv2.absdiff(current, prev)
-    kernel_size = 3
-    kernel = np.ones((kernel_size, kernel_size), np.uint8)
-    eroded_mask = cv2.erode(frame_diff, kernel, iterations=1
-                           )
-    dilated_mask = cv2.dilate(eroded_mask, kernel, iterations=3)
-    return dilated_mask
- 
-def bgsub(frame):
-    fgmask = backSub.apply(frame)
-    return fgmask
-    
-video_path = r'C:\Users\ERSA\Desktop\3_5_58.webm'
+video_path = ...
+
+video_name = video_path.split('\\')[-1].split('.')[0]
+output_folder = ....
+images = []
+counter = 0
+idx = 0
+
+x1, y1, x2, y2 = (0,0,0,0)
 cap = cv2.VideoCapture(video_path)
-i = 0
-count = 0
-ret, frame = cap.read()
-frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-final = np.zeros_like(frame)
-diff = np.zeros_like(frame)
-output = np.zeros_like(frame)
-backSub = cv2.createBackgroundSubtractorMOG2(history=5, varThreshold=15)
-fgmask = None
-while True:
+# prev = None
+m = 10
+timer = 0
+
+while True:   
     ret, frame = cap.read()
     if not ret:
         break
+    # Apply background subtraction
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     
-    if(i<3):
-        final = preprocessing(final, frame)
-    else:
-        i = 0
-        prev = final
-        current = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        diff = frame_diff(current, prev)
-        final = 0
-        current = 0
-    i += 1
-    # Display the processed frame
+    # Apply Gaussian filtering to reduce thermal noise
+    filtered_image = cv2.GaussianBlur(gray, (3, 3), 0)
+    
+    images.append(filtered_image)
+    if(timer >= m):
+        #save frames
+        final, trigger = sumofimages(images)
+        if(trigger == True):
+            p = m
+            for img in images:                
+                print("Saving...")
+                output_path = os.path.join(output_folder, f"{video_name}+{counter - p }.jpg")
+                cv2.imwrite(output_path, img)
+                p -= 1
+            print("Saving completed!")
+        else:
+            print("No Detection Found. Buffer cleared.")
+        images = []
+        timer = 0
+    # Display the resulting image
     cv2.namedWindow("output")  
-    resized_image = cv2.resize(diff, (600, 600))
-    cv2.putText(resized_image, str(i)+'-'+str(count), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
+    resized_image = cv2.resize(filtered_image, (600, 600))
     cv2.imshow('output', resized_image)
-    count += 1
-    # Break the loop if 'q' is pressed
-    if cv2.waitKey(100) & 0xFF == ord('q'):
-        break
-
-# Release the video capture and close the windows
+    
+    print(counter)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+# 
+    counter += 1  
+    timer += 1
 cap.release()
 cv2.destroyAllWindows()
 
+
+# Define the folder path containing the images
+folder_path = output_folder
+
+# Get a list of image file paths in the folder
+image_files = glob.glob(folder_path + '/*.jpg')
+# Iterate over pairs of consecutive images
+count = 0
+prev = None
+idx = 0
+j = 0
+prev_x1, prev_x2, prev_y1, prev_y2 = (0,0,0,0)
+while j < len(image_files)-10:
+#     print("idx", idx, "j:", j, "counter:", count, "prev", prev)
+    j, idx, prev,prev_x1, prev_y1, prev_x2, prev_y2 = autocorr(j, idx, prev,prev_x1, prev_y1, prev_x2, prev_y2)
     
-    
+    count += 1
+
+
