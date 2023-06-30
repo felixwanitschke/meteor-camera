@@ -1,0 +1,182 @@
+def line_detection(frame):
+# Apply Canny edge detection
+    edges = cv2.Canny(frame, 20, 150)
+# Apply Hough Transform
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20, minLineLength=40, maxLineGap=10)
+    # Draw the detected lines on a blank image or overlay them on the original image
+    line_image = frame.copy()
+    line_points = []
+    if(lines is not None):
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+#             print(l(x1,y1,x2,y2), x1, y1, x2, y2)
+            # Append line points
+            line_points.append([(x1, y1), (x2, y2)])
+            # Draw the detected line on the image
+            
+            cv2.line(line_image, (x1, y1), (x2, y2), (255, 255, 255), 2)
+        
+    return line_image
+
+def rect(edges):
+    # Find contours in the edges
+    area = []
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    object_id_counter = 0
+    trigger = False
+    if(contours is not None):
+        # Iterate over the contours and draw rectangles around them
+        for contour in contours:
+            # Get the bounding rectangle of the contour
+            x, y, w, h = cv2.boundingRect(contour)
+            if((w >= 15 and h>= 5) or (w>=5 and h>=15)):
+                trigger = True
+                x1 = x
+                x2 = x+w
+                y1 = y
+                y2 = y+h
+                # Calculate other attributes as needed
+                object_id_counter += 1  # Increment the object ID counter
+                area.append({
+                    "id": object_id_counter,
+                    "bbox": (x, y, x + w, y + h),
+                    "width": w,
+                    "height": h,
+                    "area": w * h,
+                    # Add any other desired attributes
+                })
+
+ 
+        # Draw the rectangle on the original image
+#                 cv2.rectangle(edges, (x1-5, y1-5), (x2+5, y2+5), (255, 255, 255), 2)
+        
+    return edges, area, trigger
+        
+        
+#to find if the ROI is found in the next frame in the neighbouring areas    
+def classify(x1,y1,x2,y2, idx, prev, prev_x1, prev_y1, prev_x2, prev_y2):
+    
+    if prev is None:
+        prev_x1, prev_y1, prev_x2, prev_y2 = x1, y1, x2, y2
+        prev = "ok"
+    else:
+        curr_x1, curr_y1, curr_x2, curr_y2 = x1, y1, x2, y2
+        if prev_x2 -20 <= curr_x1 <= prev_x2+20 and prev_y2 -20 <= curr_y1 <= prev_y2+20:
+            idx += 1
+            print("Found in the neighbouring")
+        else: 
+            idx = 0
+            print("Not Found in the neighbouring")
+            
+    return x1,y1,x2,y2, idx, prev, prev_x1, prev_y1, prev_x2, prev_y2
+            
+#for live detection add images and see if there is any trail           
+def sumofimages(images):
+    im = np.array(images)
+    final = np.zeros_like(im[0]).astype(np.int16)
+    for i in range(len(im)-1):
+        im[i][np.abs(im[i]) <= 50] = 0
+        final += np.abs(im[i].astype(np.int16))
+        
+        
+    final = final.astype(np.uint8)
+    final = line_detection(final)
+    final_, area, trigger = rect(final)
+    return final_, trigger
+
+#check the pattern and see if it is a fast meteor or slow satellite
+#later used to calclate autocorrelation and check periodicity
+def detect_alternating_line(image, roi_x, roi_y, roi_x2, roi_y2):
+    arr = []
+    roi = image[roi_y:roi_y2, roi_x:roi_x2]
+    for row in roi:
+        sum_ = np.sum(row)
+
+        if(sum_ > 0):
+            arr.append(1)
+        elif(sum_ < 0):
+            arr.append(-1)
+    return arr
+
+# # Create a figure and axis for the plot
+def tracking(j):
+    n = 10
+    fig, ax = plt.subplots()
+    i = 0+j
+    x1, y1, x2, y2 = (0,0,0,0)
+    image = cv2.imread(image_files[0], cv2.IMREAD_GRAYSCALE)
+    final = np.zeros_like(image).astype(np.int16)
+    im = np.zeros_like(image).astype(np.int16)
+    while(i < n+j):
+        # Load the current and next images
+        
+        image1 = cv2.imread(image_files[i], cv2.IMREAD_GRAYSCALE)
+        image2 = cv2.imread(image_files[i+1], cv2.IMREAD_GRAYSCALE)
+
+        # for img in output_folder:
+        # Apply median filter with kernel size 3x3
+        filtered_1 = ndimage.median_filter(image1, 3)
+        filtered_2 = ndimage.median_filter(image2, 3)
+
+        # # Perform subtraction
+        final = filtered_2.astype(np.int16) - filtered_1.astype(np.int16)
+        final[np.abs(final) < 15] = 0
+        # Check if frames are the same (threshold can be adjusted)
+        threshold = 10
+        if cv2.countNonZero(final) <= threshold:
+            i += 1
+        else:
+            i += 3
+            im += final
+        # Create a plot to visualize the difference matrix
+# Create a plot to visualize the difference matrix
+
+    line = line_detection(im.astype(np.uint8)*20)
+    edge_detected, area, trigger = rect(line)
+    j += n
+
+    if len(area) != 0:
+        area = sorted(area, key=lambda x: x['area'], reverse=True)
+#         print(area)
+        x1, y1, x2, y2 = area[0]["bbox"][0], area[0]["bbox"][1], area[0]["bbox"][2], area[0]["bbox"][3]
+    
+    plt.imshow(im*50, cmap = 'RdBu')
+    # Create a rectangle patch
+    rectangle = patches.Rectangle((x1-5,y1-5), (x2-x1)+10, (y2-y1)+10, linewidth=1, edgecolor='r', facecolor='none')
+    # Add the rectangle patch to the axes
+    ax.add_patch(rectangle)
+
+    # # # Set negative values to red and positive values to blue
+    plt.set_cmap('RdBu')
+    plt.clim(-np.max(np.abs(im)), np.max(np.abs(im)))
+
+    # Display the plot|
+    plt.show()
+    return im, x1, y1, x2, y2, j
+
+def autocorr(j, idx, prev, prev_x1, prev_y1, prev_x2, prev_y2):
+    im, x1, y1, x2, y2, j = tracking(j)
+    x = detect_alternating_line(im, x1, y1, x2, y2)
+    if(x != []):
+        x = np.array(x)
+        n = x.size
+        norm = (x - np.mean(x))
+        result = np.correlate(norm, norm, mode='same')
+        acorr = result[n//2 + 1:] / (x.var() * np.arange(n-1, n//2, -1))
+        lag = np.abs(acorr).argmax() + 1
+        r = acorr[lag-1]   
+        if np.abs(r) > 0.7:
+            idx += 1
+            print("idx:", idx)
+            print('Appears to be autocorrelated with r = {}, lag = {}'. format(r, lag))
+            x1, y1, x2, y2, idx, prev, prev_x1, prev_y1, prev_x2, prev_y2 = classify(x1,y1,x2,y2,idx, prev, prev_x1, prev_y1, prev_x2, prev_y2)
+            if(idx >= 3):
+                print("Most Probably a high speed satellite or any other moving object")
+            elif(idx>0 and idx<3):
+                print("Most probably a high speed meteor around frame", j, "th")
+        else: 
+            print(r, 'Appears to be not autocorrelated')
+    else:
+        print("Nothing Detected")
+
+    return j, idx, prev, prev_x1, prev_y1, prev_x2, prev_y2
